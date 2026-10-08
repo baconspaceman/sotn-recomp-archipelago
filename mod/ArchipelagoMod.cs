@@ -126,6 +126,7 @@ public sealed class ArchipelagoMod : IMod
         SeedCache.UseForSave(e.Memory, e.Frame);
         SeedPlan.SyncDra(e.Memory);
         CastleMapImage.Sync(e.Memory, e.Frame);
+        FamiliarFiles.Sync(e.Memory);
         RecompRando.Guard(e.Memory);
         PrizeTableSync.Tick(e.Memory);
 

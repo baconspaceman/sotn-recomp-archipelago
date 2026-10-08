@@ -107,8 +107,8 @@ static class SeedPlan
         bool librarianHoldsRelic = ApClient.TryGetScout(LibrarianLocation, out var lib)
             && lib.Player == slot && lib.Item >= ItemData.FirstRelic && lib.Item <= ItemData.LastRelic;
         CastleMapImage.Reset(RecompOne.Runtime.Runtime.Mem);
+        FamiliarFiles.Reset();
         _fromPayload = ApClient.SlotData?["recomp"] is JsonObject payload && ReadPayload(payload, !librarianHoldsRelic);
-        ReadLayoutTest();
 
         foreach (var loc in LocationData.All)
         {
@@ -176,16 +176,19 @@ static class SeedPlan
                     list.Add((offset, value));
                     bytes++;
                 }
-                if (_graphics.TryGetValue(key, out var earlier))
-                    foreach (var (chunk, list) in chunks)
-                        if (earlier.TryGetValue(chunk, out var had)) had.AddRange(list); else earlier[chunk] = list;
-                else _graphics[key] = chunks;
+                _graphics[key] = chunks;
                 continue;
             }
             if (key == "F_MAP")
             {
                 // The pause map's picture, in RAM all session (CastleMapImage).
                 foreach (var (offset, value) in Bytes(runs)) { CastleMapImage.Add(offset, value); bytes++; }
+                continue;
+            }
+            if (FamiliarFiles.Index(key) is var familiar and >= 0)
+            {
+                // A familiar's overlay, written while it's loaded (FamiliarFiles).
+                foreach (var (offset, value) in Bytes(runs)) { FamiliarFiles.Add(familiar, offset, value); bytes++; }
                 continue;
             }
             if (key == "RIC")
@@ -218,25 +221,6 @@ static class SeedPlan
         }
         Log.Info($"seed patch data: {bytes} bytes to place, {skipped} not applicable to the recomp");
         return true;
-    }
-
-    // TEMPORARY, map rando proof of concept: a castle layout from Sestren's SOTN Shuffler, as patch data in
-    // the same format, read from this file next to the game and applied on top of the seed's own.
-    const string LayoutTestFile = "archipelago-layout-test.json";
-
-    static void ReadLayoutTest()
-    {
-        try
-        {
-            if (!System.IO.File.Exists(LayoutTestFile)) return;
-            if (JsonNode.Parse(System.IO.File.ReadAllText(LayoutTestFile)) is not JsonObject layout) return;
-            Log.Info($"map rando test: applying {LayoutTestFile}");
-            ReadPayload(layout, false);
-        }
-        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-        {
-            Log.Error($"map rando test: couldn't read {LayoutTestFile}: {ex.Message}");
-        }
     }
 
     static IEnumerable<(int Offset, byte Value)> Bytes(JsonNode? runs)
@@ -371,11 +355,14 @@ static class SeedPlan
     const uint IsUsingCdAddr = 0x8006C3B0, CdStepAddr = 0x8006C398;
     const uint SelHeaderWord = 0x801AEED8;
 
+    // No file is being read from the CD (one that was is all in RAM).
+    public static bool CdIdle(IMemory m) => m.ReadU32(IsUsingCdAddr) == 0 && m.ReadU32(CdStepAddr) == 0;
+
     public static void ApplyResidentFiles(IMemory m)
     {
         if (!Ready || _sel.Count == 0) return;
         if (m.ReadU8(Game.GameStateAddr) == (byte)GameState.Play) return;
-        if (m.ReadU32(IsUsingCdAddr) != 0 || m.ReadU32(CdStepAddr) != 0) return;
+        if (!CdIdle(m)) return;
         if (m.ReadU32(OverlayBase) != SelHeaderWord) return;
         if (System.Array.IndexOf(RecompOne.Runtime.Dispatch.Dispatcher.ActiveNames, "sel") < 0) return;
         Write(m, _sel);

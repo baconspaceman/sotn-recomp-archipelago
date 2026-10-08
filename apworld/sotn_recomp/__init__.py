@@ -1,6 +1,6 @@
-from typing import ClassVar, Dict, Tuple, Any, List
+from typing import ClassVar, Dict, Tuple, Any, List, Optional, TextIO
 
-import typing, os
+import logging, typing, os
 from worlds.AutoWorld import WebWorld, World
 from BaseClasses import Tutorial, MultiWorld, ItemClassification, Item
 from Options import AssembleOptions
@@ -10,10 +10,11 @@ from .Locations import locations, SotnLocation
 from .Regions import create_regions, create_regions_no_logic
 from .Rules import set_rules, set_no_logic_rules
 from .Options import SOTNOptions, sotn_option_groups
-from .Rom import SotnPatchData, write_tokens
+from .Rom import SotnPatchData, write_tokens, start_passage
 from .Recomp import recomp_payload
 from .Logic import export_logic
 from .Groups import ITEM_GROUPS, LOCATION_GROUPS
+from . import castle
 from .data.Constants import GAME_NAME
 
 
@@ -41,6 +42,33 @@ class SotnWeb(WebWorld):
 EXTRA_ADD = ["Duplicator", "Crissaegrim", "Ring of varda", "Mablung sword", "Masamune", "Marsil", "Yasutsuna"]
 
 
+# Castle layouts tried before generation gives up (rerolls are rare).
+CASTLE_ATTEMPTS = 50
+
+# The areas a shuffled castle's links name (castle/ stage links: from<Area>To<Area>).
+AREA_NAMES = {
+    "AbandonedMine": "Abandoned Mine", "AlchemyLaboratory": "Alchemy Laboratory", "CastleEntrance": "Castle Entrance",
+    "CastleKeep": "Castle Keep", "Catacombs": "Catacombs", "ClockTower": "Clock Tower", "Colosseum": "Colosseum",
+    "LongLibrary": "Long Library", "MarbleGallery": "Marble Gallery", "OlroxsQuarters": "Olrox's Quarters",
+    "OuterWall": "Outer Wall", "RoyalChapel": "Royal Chapel", "UndergroundCaverns": "Underground Caverns",
+    "WarpRooms": "Warp Rooms",
+}
+
+
+def area_links(layout: castle.CastleLayout) -> List[str]:
+    """The castle's area connections for the spoiler log, one per line: each area's door (named by where
+    it leads in the vanilla castle) and the door it now leads to."""
+    def door(link: str) -> str:
+        for key, name in AREA_NAMES.items():
+            prefix = f"from{key}To"
+            if link.startswith(prefix) and link[len(prefix):] in AREA_NAMES:
+                return f"{name} (door to {AREA_NAMES[link[len(prefix):]]})"
+        return link
+
+    pairs = {tuple(sorted((door(a), door(b)))) for a, b in layout.stage_links.items()}
+    return [f"{a} <-> {b}" for a, b in sorted(pairs)]
+
+
 # Set to write each slot's disc writes (token_data format) next to the seed, for tools/verify_payload.py.
 DEBUG_TOKENS_ENV = "SOTN_RECOMP_DEBUG_TOKENS"
 
@@ -59,6 +87,7 @@ class SotnWorld(World):
     required_client_version: Tuple[int, int, int] = (0, 4, 5)
     extra_add: List[str]
     sotn_patch: SotnPatchData
+    castle_layout: Optional[castle.CastleLayout]
 
     item_name_groups = ITEM_GROUPS
     location_name_groups = LOCATION_GROUPS
@@ -77,6 +106,33 @@ class SotnWorld(World):
         # Per world: upstream kept this as a class list and popped from it, so a second SotN slot
         # (or the next generation in the same process) got fewer powerful items.
         self.extra_add = list(EXTRA_ADD)
+        # A shuffled castle (Sestren's SOTN Shuffler, castle/), laid out before the regions are made from it.
+        self.castle_layout = None
+        if self.options.shuffle_rooms.value or self.options.shuffle_area_connections.value:
+            for _ in range(CASTLE_ATTEMPTS):
+                self.castle_layout = castle.generate(
+                    castle.seed_name(self.random),
+                    shuffle_rooms=bool(self.options.shuffle_rooms.value),
+                    shuffle_stages=bool(self.options.shuffle_area_connections.value),
+                    area_colors=bool(self.options.map_area_colors.value))
+                problem = self.castle_problem()
+                if problem is None:
+                    break
+                logging.debug(f"{self.player_name}: castle layout {self.castle_layout.seed} rerolled: {problem}")
+            else:
+                raise Exception(f"{self.player_name}: no usable castle layout in {CASTLE_ATTEMPTS} tries")
+
+    def castle_problem(self) -> Optional[str]:
+        """Why this castle layout can't be used for this world, or None."""
+        layout = self.castle_layout
+        if self.options.starting_area.value:
+            # The passage to the start (Rom.py start_room_rando) takes two squares by the first room; the game
+            # finds a square's room in table order, so room 1 (the only one before them) mustn't be there.
+            x, y = start_passage(self)
+            top, left = layout.positions["castleEntrance"]["dropUnderPortcullis"]  # 1x2 squares
+            if x + 1 > 63 or (left in (x, x + 1) and top <= y <= top + 1):
+                return "no room for the passage to the starting area"
+        return None
 
     def create_item(self, name: str) -> Item:
         data = items[name]
@@ -217,10 +273,22 @@ class SotnWorld(World):
         slot_data["open_are"] = self.options.colosseum_back_door.value
         slot_data["boss_locations"] = self.options.boss_drops.value
         # The patch's writes for the SymphonyRecomp mod, which applies them to RAM as files load.
-        slot_data["recomp"] = recomp_payload(self.sotn_patch)
+        slot_data["recomp"] = recomp_payload(self.sotn_patch, self.castle_layout.writes if self.castle_layout else None)
+        if self.castle_layout:
+            # What the castle was made from: castle.generate() with these gives the same writes again.
+            layout = self.castle_layout
+            slot_data["recomp"]["castle"] = {"seed": layout.seed, "shuffle_rooms": layout.shuffle_rooms,
+                                             "shuffle_stages": layout.shuffle_stages, "area_colors": layout.area_colors}
         # The logic as data, for the mod's map (Logic.py).
         slot_data["recomp"]["logic"] = export_logic(self.multiworld, self.player)
         return slot_data
+
+    def write_spoiler(self, spoiler_handle: TextIO) -> None:
+        if self.castle_layout is None or not self.castle_layout.shuffle_stages:
+            return
+        spoiler_handle.write(f"\n\nArea connections ({self.multiworld.get_player_name(self.player)}):\n\n")
+        for line in area_links(self.castle_layout):
+            spoiler_handle.write(f"    {line}\n")
 
     def generate_output(self, output_directory: str) -> None:
         # Nothing to hand out: the mod gets everything from slot_data when it connects.

@@ -1,7 +1,7 @@
 import struct
 import math
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Tuple
 from worlds.AutoWorld import World
 from worlds.Files import APTokenMixin, APTokenTypes
 from BaseClasses import Item, ItemClassification
@@ -2174,6 +2174,15 @@ def modify_drop(drop_mod: int, patch: SotnPatchData):
                     pass
 
 
+def start_passage(world: "SotnWorld") -> Tuple[int, int]:
+    """The map square right of the Castle Entrance's first room ('afterDrawbridge', 2x3 squares) on its
+    bottom row, where starting_area's passage to the start goes: (4, 40) in the vanilla castle, wherever
+    the room is in a shuffled one."""
+    layout = getattr(world, "castle_layout", None)
+    top, left = layout.positions["castleEntrance"]["afterDrawbridge"] if layout else (38, 2)
+    return left + 2, top + 2
+
+
 def start_room_rando(castle_flag: int, world: "SotnWorld", patch: SotnPatchData):
     room_keys = list(start_room_data.keys())
     rand_room_key = world.random.choice(room_keys)
@@ -2258,25 +2267,24 @@ def start_room_rando(castle_flag: int, world: "SotnWorld", patch: SotnPatchData)
         patch.write_token(APTokenTypes.WRITE, offset, (0x00000000).to_bytes(4, "little"))  # nop
         offset += 4
 
+    # Setting up the CD room: the Castle Entrance's hallway (room 2) becomes a one-square room right of the
+    # first room's bottom row, drawn with the Marble Gallery loading room's tiles (layout 0x15), and room 3 a
+    # loading room right of it that leads to the start (teleporter 0x64).
+    x, y = start_passage(world)
     offset = 0x4b6ab0c
-    patch.write_token(APTokenTypes.WRITE, offset, (0x28042804).to_bytes(4, "little"))  # Setting up the CD room
+    patch.write_token(APTokenTypes.WRITE, offset, bytes([x, y, x, y]))
     offset += 4
     patch.write_token(APTokenTypes.WRITE, offset, (0x34000015).to_bytes(4, "little"))
     offset += 4
-    patch.write_token(APTokenTypes.WRITE, offset, (0x28052805).to_bytes(4, "little"))
+    patch.write_token(APTokenTypes.WRITE, offset, bytes([x + 1, y, x + 1, y]))
     offset += 4
     patch.write_token(APTokenTypes.WRITE, offset, (0x0000ff64).to_bytes(4, "little"))
 
+    # Layout 0x15's tile rectangle moved there (as sotn.io has it: right = left, bottom 0) and its z priority.
     offset = 0x4b66a44
-    patch.write_token(APTokenTypes.WRITE, offset, struct.pack("<B", 0x04))
-    offset += 1
-    patch.write_token(APTokenTypes.WRITE, offset, struct.pack("<B", 0x4a))
-    offset += 1
-    patch.write_token(APTokenTypes.WRITE, offset, struct.pack("<B", 0x00))
-    offset += 1
-    patch.write_token(APTokenTypes.WRITE, offset, struct.pack("<B", 0x41))
-    offset += 1
-    patch.write_token(APTokenTypes.WRITE, offset, struct.pack("<B", 0x64))
+    for byte in (x | y << 6 | x << 12).to_bytes(3, "little") + bytes([0x41, 0x64]):
+        patch.write_token(APTokenTypes.WRITE, offset, struct.pack("<B", byte))
+        offset += 1
 
     offset = 0xae95c  # change the destination
     new_write = rand_room["xyWrite"]  # Write X,Y Position

@@ -13,6 +13,9 @@ loaded at 0x80180000; offsets are within the file. DRA is DRA.BIN (0x800A0000). 
 file-select overlay (also 0x80180000). F_GAME/F_GAME2 are graphics streamed to VRAM (Alucard/Richter).
 RIC is Richter's overlay. Anything else stays as raw disc offsets under "BIN" (none with the current
 Rom.py). The CD-loaded code block in WARNING.TIM is left out: the recomp never runs it.
+
+A shuffled castle (castle/) adds its own writes, already per file: the same keys plus F_MAP (the pause
+map picture, loaded at 0x801E0000) and TT_000..TT_006 (the familiars' overlays, 0x80170000).
 """
 import math
 from typing import Dict, List, Optional, Tuple
@@ -84,8 +87,25 @@ def _in_seed_block(key: str, disc_offset: int, file_offset: int) -> bool:
     return False
 
 
-def recomp_payload(patch) -> Dict:
-    by_file: Dict[str, Dict[int, int]] = {}
+# The castle's files whose writes go over Rom.py's: the map palette (map_area_colors, over map_color's).
+CASTLE_FIRST_FILES = {"F_GAME", "F_GAME2"}
+
+# Room layout entries (10 bytes) the castle's patches move within their list: (file, vanilla offset, new
+# offset). normalize-marble-gallery moves an entity right and keeps the room's x-sorted list in order, which
+# puts a candle one entry earlier; Rom.py's writes into the candle go with it. The castle's other patches
+# change entries in place, in fields Rom.py and the mod don't write. From tools/castle/entity_moves.py.
+CASTLE_ENTRY_MOVES = [("NO0", 0x359E, 0x3594)]
+LAYOUT_ENTRY_SIZE = 10
+
+
+def recomp_payload(patch, castle_writes: Optional[Dict[str, Dict[int, int]]] = None) -> Dict:
+    # The castle's writes first, then the patch's over them (a start room's teleporter, for one), but the
+    # castle's map palette last.
+    castle_writes = castle_writes or {}
+    by_file: Dict[str, Dict[int, int]] = {key: dict(writes) for key, writes in castle_writes.items()}
+    # (The castle writes only the bytes it changes; any of them in the new place means its patch is in.)
+    moves = {(key, old): new for key, old, new in CASTLE_ENTRY_MOVES
+             if any(o in castle_writes.get(key, {}) for o in range(new, new + LAYOUT_ENTRY_SIZE))}
     for token_type, offset, data in patch._tokens:
         if token_type != APTokenTypes.WRITE:
             raise ValueError(f"token type {token_type} at 0x{offset:X} not supported by the recomp payload")
@@ -96,7 +116,13 @@ def recomp_payload(patch) -> Dict:
             key, file_offset = where
             if key in SKIPPED_FILES or _in_seed_block(key, offset + i, file_offset):
                 continue
+            for (moved_key, old), new in moves.items():
+                if key == moved_key and old <= file_offset < old + LAYOUT_ENTRY_SIZE:
+                    file_offset += new - old
+                    break
             by_file.setdefault(key, {})[file_offset] = byte  # later tokens win, as when patching
+    for key in CASTLE_FIRST_FILES & castle_writes.keys():
+        by_file[key].update(castle_writes[key])
 
     files: Dict[str, List[list]] = {}
     for key, bytes_at in by_file.items():

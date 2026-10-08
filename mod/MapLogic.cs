@@ -8,14 +8,16 @@ namespace SotnArchipelago;
 
 // The seed's logic, as the AP world exported it (slot_data["recomp"]["logic"], apworld Logic.py), and which
 // locations the player can reach in logic with what they have. A rule is a list of item sets and holds if
-// the player has every item of any one set ([[]] = always, [] = never). The same rules the seed was
+// the player has every item of any one set ([[]] = always, [] = never). Events (a switch hit, a door opened)
+// count as had once their spot is reachable, and rules can need them like items. The same rules the seed was
 // generated with; tools/verify_logic.py checks the export against Archipelago's own reachability.
 static class MapLogic
 {
     sealed record Rules(
         string Start,
         Dictionary<string, List<(string Target, string[][] Sets)>> Exits,
-        Dictionary<long, (string Region, string[][] Sets)> Locations);
+        Dictionary<long, (string Region, string[][] Sets)> Locations,
+        List<(string Item, string Region, string[][] Sets)> Events);
 
     static Rules? _rules;
     static int _rulesFor = -1;
@@ -63,22 +65,36 @@ static class MapLogic
         return names;
     }
 
-    // Rules only ever need items, never other regions, so one pass over the region graph is enough.
+    // Rules only ever need items (and events), never other regions: search the region graph, then take the
+    // events now in reach and search again from where it got to, until no new event turns up.
     static HashSet<long> Solve(Rules rules, HashSet<string> items)
     {
         bool Holds(string[][] sets) => sets.Any(set => set.All(items.Contains));
 
         var regions = new HashSet<string> { rules.Start };
         var queue = new Queue<string>(regions);
-        while (queue.Count > 0)
+        while (true)
         {
-            if (!rules.Exits.TryGetValue(queue.Dequeue(), out var exits)) continue;
-            foreach (var (target, sets) in exits)
-                if (!regions.Contains(target) && Holds(sets))
+            while (queue.Count > 0)
+            {
+                if (!rules.Exits.TryGetValue(queue.Dequeue(), out var exits)) continue;
+                foreach (var (target, sets) in exits)
+                    if (!regions.Contains(target) && Holds(sets))
+                    {
+                        regions.Add(target);
+                        queue.Enqueue(target);
+                    }
+            }
+            bool more = false;
+            foreach (var (item, region, sets) in rules.Events)
+                if (!items.Contains(item) && regions.Contains(region) && Holds(sets))
                 {
-                    regions.Add(target);
-                    queue.Enqueue(target);
+                    items.Add(item);
+                    more = true;
                 }
+            if (!more) break;
+            // An exit that was shut may be open now: look again from every region reached.
+            foreach (var region in regions) queue.Enqueue(region);
         }
 
         var reachable = new HashSet<long>();
@@ -98,7 +114,10 @@ static class MapLogic
             var locations = new Dictionary<long, (string, string[][])>();
             foreach (var (id, entry) in json["locations"]!.AsObject())
                 locations[long.Parse(id)] = (entry![0]!.GetValue<string>(), Sets(entry[1]));
-            return new Rules(json["start"]!.GetValue<string>(), exits, locations);
+            var events = new List<(string, string, string[][])>();
+            foreach (var entry in json["events"]?.AsArray() ?? [])  // not in seeds from before events
+                events.Add((entry![0]!.GetValue<string>(), entry[1]!.GetValue<string>(), Sets(entry[2])));
+            return new Rules(json["start"]!.GetValue<string>(), exits, locations, events);
         }
         catch (Exception ex)
         {

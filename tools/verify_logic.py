@@ -23,10 +23,14 @@ OPTION_SETS = [
     {"enemysanity": 1, "enemysanity_needs_faerie_scroll": 1, "boss_drops": 1, "item_pool": 3},
     {"difficulty": 0, "open_shortcuts": 1},
     {"no_logic": 1},
+    {"shuffle_rooms": 1},
+    {"shuffle_area_connections": 1},
+    {"shuffle_rooms": 1, "shuffle_area_connections": 1, "boss_drops": 1, "enemysanity": 1},
 ]
 
 
 def reachable(export, have):
+    have = set(have)
     ok = lambda sets: any(all(i in have for i in s) for s in sets)
     regions = {export["start"]}
     changed = True
@@ -37,6 +41,10 @@ def reachable(export, have):
                 if target not in regions and ok(sets):
                     regions.add(target)
                     changed = True
+        for item, region, sets in export.get("events", []):
+            if item not in have and region in regions and ok(sets):
+                have.add(item)
+                changed = True
     return {int(loc) for loc, (region, sets) in export["locations"].items() if region in regions and ok(sets)}
 
 
@@ -60,8 +68,10 @@ def main():
         multiworld = setup_multiworld(world_type, seed=rng.randrange(1 << 30), options=options)
         world = multiworld.worlds[1]
         export = logic_module.export_logic(multiworld, 1)
-        items = sorted({i for _, sets in export["locations"].values() for s in sets for i in s}
-                       | {i for edges in export["regions"].values() for _, sets in edges for s in sets for i in s})
+        events = {item for item, _, _ in export.get("events", [])}
+        items = sorted(({i for _, sets in export["locations"].values() for s in sets for i in s}
+                        | {i for edges in export["regions"].values() for _, sets in edges for s in sets for i in s}
+                        | {i for _, _, sets in export.get("events", []) for s in sets for i in s}) - events)
         locations = [loc for loc in multiworld.get_locations(1) if loc.address is not None]
         bad = 0
         for n in range(states):
@@ -70,6 +80,7 @@ def main():
             state = CollectionState(multiworld)
             for name in have:
                 state.collect(world.create_item(name), prevent_sweep=True)
+            state.sweep_for_advancements()  # the events (nothing else is placed yet)
             expected = {loc.address for loc in locations if loc.can_reach(state)}
             got = reachable(export, have)
             if expected != got:
@@ -78,7 +89,7 @@ def main():
                     print(f"  mismatch with {sorted(have)}: AP only {sorted(expected - got)[:8]}, export only {sorted(got - expected)[:8]}")
         rules = len(export["locations"]) + sum(len(e) for e in export["regions"].values())
         print(f"{options or 'defaults'}: {len(export['regions'])} regions, {len(export['locations'])} locations, "
-              f"{rules} rules over {len(items)} items; {states} random states, {bad} mismatches")
+              f"{len(events)} events, {rules} rules over {len(items)} items; {states} random states, {bad} mismatches")
         failures += bad
     sys.exit(1 if failures else 0)
 

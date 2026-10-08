@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from Options import (OptionGroup, Toggle, Choice, NamedRange, ItemsAccessibility, StartInventoryPool,
+from Options import (OptionGroup, Toggle, DefaultOnToggle, Choice, NamedRange, ItemsAccessibility, StartInventoryPool,
                      PerGameCommonOptions)
 
 # "Key items" below are the items the logic can need: the relics, the Gold and Silver rings, the Spike breaker
@@ -106,6 +106,24 @@ class StartingArea(Choice):
     alias_reverse_castle = 2
     alias_any_castle = 3
     default = 0
+
+
+class ShuffleRooms(Toggle):
+    """Lays out each area's rooms differently (Sestren's SOTN Shuffler). The areas keep their own rooms, and
+    the inverted castle is the castle turned upside down, as usual. The logic follows the new layout."""
+    display_name = "Shuffle rooms"
+
+
+class ShuffleAreaConnections(Toggle):
+    """Changes which areas lead to which (Sestren's SOTN Shuffler). The inverted castle follows the castle.
+    The logic follows the new layout."""
+    display_name = "Shuffle area connections"
+
+
+class MapAreaColors(DefaultOnToggle):
+    """With a shuffled castle, the pause map shows each area in its own colour. Off: the whole map is one
+    colour (Map colour)."""
+    display_name = "Map area colours"
 
 
 class InvertedLibraryCard(Toggle):
@@ -366,6 +384,9 @@ class SOTNOptions(PerGameCommonOptions):
     colosseum_back_door: ColosseumBackDoor
     open_shortcuts: OpenShortcuts
     starting_area: StartingArea
+    shuffle_rooms: ShuffleRooms
+    shuffle_area_connections: ShuffleAreaConnections
+    map_area_colors: MapAreaColors
     inverted_library_card: InvertedLibraryCard
     skip_clock_tower_puzzle: SkipClockTowerPuzzle
     no_logic: NoLogic
@@ -404,6 +425,9 @@ sotn_option_groups = [
     OptionGroup("Castle", [
         CavernsBackDoor, ColosseumBackDoor, OpenShortcuts, StartingArea, InvertedLibraryCard, SkipClockTowerPuzzle,
         NoLogic,
+    ]),
+    OptionGroup("Castle layout", [
+        ShuffleRooms, ShuffleAreaConnections, MapAreaColors,
     ]),
     OptionGroup("Enemies and drops", [
         Difficulty, EnemyStrength, RandomEnemyStats, DropRate, EnemyDrops, EnemyDropsIncludeHeartsAndGold,

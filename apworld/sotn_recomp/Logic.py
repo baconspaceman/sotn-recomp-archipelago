@@ -10,7 +10,11 @@ only progression items count: sets that need anything else are left out.
 
     {"start": "Menu",
      "regions": {"<region>": [["<connected region>", sets], ...]},
-     "locations": {"<location id>": ["<region>", sets]}}
+     "locations": {"<location id>": ["<region>", sets]},
+     "events": [["<event item>", "<region>", sets], ...]}
+
+Events are locations without an id holding a fixed item (a switch hit, a door opened, Victory): the item
+counts as had once its location is reachable, and rules can need it like any other item.
 
 tools/verify_logic.py checks the export against Archipelago's own reachability on random item sets.
 """
@@ -77,6 +81,10 @@ def export_logic(multiworld: MultiWorld, player: int) -> Dict:
     cache: Dict[int, List[List[str]]] = {}
     progression: Dict[str, bool] = {}
 
+    event_locations = [location for location in multiworld.get_locations(player) if location.address is None]
+    for location in event_locations:
+        progression[location.item.name] = True
+
     def is_progression(name: str) -> bool:
         # Archipelago only counts progression items in a state, so a rule's other items never help
         # (Power of wolf, for one). Per slot: Faerie scroll is progression only with enemy_scroll.
@@ -96,7 +104,9 @@ def export_logic(multiworld: MultiWorld, player: int) -> Dict:
         regions[region.name] = [[exit_.connected_region.name, sets(exit_.access_rule)]
                                 for exit_ in region.exits if exit_.connected_region is not None]
         for location in region.locations:
-            if location.address is None:
-                continue  # event (Victory)
-            locations[str(location.address)] = [region.name, sets(location.access_rule)]
-    return {"start": multiworld.get_region("Menu", player).name, "regions": regions, "locations": locations}
+            if location.address is not None:
+                locations[str(location.address)] = [region.name, sets(location.access_rule)]
+    events = [[location.item.name, location.parent_region.name, sets(location.access_rule)]
+              for location in event_locations]
+    return {"start": multiworld.get_region("Menu", player).name, "regions": regions, "locations": locations,
+            "events": events}

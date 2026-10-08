@@ -102,7 +102,9 @@ static class SeedPlan
 
         bool librarianHoldsRelic = ApClient.TryGetScout(LibrarianLocation, out var lib)
             && lib.Player == slot && lib.Item >= ItemData.FirstRelic && lib.Item <= ItemData.LastRelic;
+        CastleMapImage.Reset(RecompOne.Runtime.Runtime.Mem);
         _fromPayload = ApClient.SlotData?["recomp"] is JsonObject payload && ReadPayload(payload, !librarianHoldsRelic);
+        ReadLayoutTest();
 
         foreach (var loc in LocationData.All)
         {
@@ -170,7 +172,16 @@ static class SeedPlan
                     list.Add((offset, value));
                     bytes++;
                 }
-                _graphics[key] = chunks;
+                if (_graphics.TryGetValue(key, out var earlier))
+                    foreach (var (chunk, list) in chunks)
+                        if (earlier.TryGetValue(chunk, out var had)) had.AddRange(list); else earlier[chunk] = list;
+                else _graphics[key] = chunks;
+                continue;
+            }
+            if (key == "F_MAP")
+            {
+                // The pause map's picture, in RAM all session (CastleMapImage).
+                foreach (var (offset, value) in Bytes(runs)) { CastleMapImage.Add(offset, value); bytes++; }
                 continue;
             }
             if (key == "RIC")
@@ -203,6 +214,25 @@ static class SeedPlan
         }
         Log.Info($"seed patch data: {bytes} bytes to place, {skipped} not applicable to the recomp");
         return true;
+    }
+
+    // TEMPORARY, map rando proof of concept: a castle layout from Sestren's SOTN Shuffler, as patch data in
+    // the same format, read from this file next to the game and applied on top of the seed's own.
+    const string LayoutTestFile = "archipelago-layout-test.json";
+
+    static void ReadLayoutTest()
+    {
+        try
+        {
+            if (!System.IO.File.Exists(LayoutTestFile)) return;
+            if (JsonNode.Parse(System.IO.File.ReadAllText(LayoutTestFile)) is not JsonObject layout) return;
+            Log.Info($"map rando test: applying {LayoutTestFile}");
+            ReadPayload(layout, false);
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            Log.Error($"map rando test: couldn't read {LayoutTestFile}: {ex.Message}");
+        }
     }
 
     static IEnumerable<(int Offset, byte Value)> Bytes(JsonNode? runs)

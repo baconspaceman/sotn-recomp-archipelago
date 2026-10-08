@@ -10,8 +10,9 @@ namespace SotnArchipelago;
 static class RecompRando
 {
     // RandoPatch's preset byte (sotn.io presets 1-12, Integrated = 13 for the recomp's Randomizer panel, also
-    // set when a save it stamped is loaded). Not zero, Randomizer.ApplyInternalRandomizer rewrites enemy drops,
-    // item tables, the shop and relics on every stage load, over the seed. While a seed applies it stays off.
+    // set when a save it stamped is loaded). At 13, Randomizer.ApplyInternalRandomizer rewrites enemy drops,
+    // item tables, the shop and relics on every stage load, over the seed; at 1-12 RandoPatch switches on that
+    // sotn.io preset's own rules (starting relics, MP discounts). While a seed applies it stays off.
     const uint PresetAddr = 0x8000C000;
 
     // A start in the inverted castle (starting_area): Rom.py adds a routine at 0x800DB9B8 that makes Leap stone

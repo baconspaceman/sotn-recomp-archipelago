@@ -16,7 +16,7 @@ static class SeedCastle
     public const int CellPixels = 4, BlockPixels = 5;   // block at (4x, 4y), sharing its edges
     const int MapRowBytes = MapSize / 2;
     const string MapFile = "F_MAP.BIN";
-    const string PaletteFile = "F_GAME.BIN";
+    const string PaletteFile = "BIN/F_GAME.BIN";
     const int PaletteOffset = 0x41800;            // F_GAME: the map's 16 colours
     const int FillIndex = 14;                     // the game fills an explored cell's empty pixels with this
     const uint OverlayBase = 0x80180000;

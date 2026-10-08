@@ -43,6 +43,7 @@ static class SeedCastle
         public byte[]? Rgba, RgbaRotated;         // the seed's picture, as stored and turned round
         public (int X0, int Y0, int X1, int Y1) Drawn = (0, 0, MapSize, MapSize);
         public uint FillColour = 0xFF808080;
+        public (int X, int Y)[] Reveal = [];        // the squares with anything drawn in the seed's picture
     }
 
     static Layout? _layout;                        // written on the game thread, read on any
@@ -59,6 +60,10 @@ static class SeedCastle
 
     // Explored cells' fill colour (ImGui ABGR), as the game draws them.
     public static uint FillColour => Current?.FillColour ?? 0xFF808080;
+
+    // The map squares the bought Castle Map reveals in this seed: every one with anything drawn in its part
+    // of the picture (as the seed's own reveal list has them, before that's cut to fit the game's space).
+    public static IReadOnlyList<(int X, int Y)> RevealCells => Current?.Reveal ?? [];
 
     // Game thread, every frame: work the seed's castle out once its placement is ready.
     public static void Update()
@@ -249,8 +254,27 @@ static class SeedCastle
                 if (x > 0 && y > 0) Put(rotated, MapSize - x, MapSize - y, colour);
             }
         layout.Drawn = maxX < 0 ? (0, 0, MapSize, MapSize) : (minX, minY, maxX + 1, maxY + 1);
+        layout.Reveal = RevealedSquares(map);
         layout.Rgba = rgba;
         layout.RgbaRotated = rotated;
+    }
+
+    // Squares whose 4x4 pixels (the square's block without its shared bottom and right edges) aren't all
+    // colour 0. A byte holds two pixels, the left one in its low nibble.
+    static (int X, int Y)[] RevealedSquares(byte[] map)
+    {
+        var squares = new List<(int, int)>();
+        const int Squares = MapSize / CellPixels;
+        for (int y = 0; y < Squares; y++)
+            for (int x = 0; x < Squares; x++)
+            {
+                bool drawn = false;
+                for (int py = y * CellPixels; py < (y + 1) * CellPixels && !drawn; py++)
+                    for (int px = x * CellPixels; px < (x + 1) * CellPixels && !drawn; px++)
+                        drawn = (map[py * MapRowBytes + px / 2] >> (px % 2 * 4) & 0xF) != 0;
+                if (drawn) squares.Add((x, y));
+            }
+        return [.. squares];
     }
 
     static void Put(byte[] rgba, int x, int y, uint abgr)

@@ -141,6 +141,30 @@ static class CastleHooks
         return false;
     }
 
+    // ---- DRA func_800F2288: the bought Castle Map ----
+    // Buying the Castle Map from the Librarian reveals the squares of a list in DRA (D_800A2C0C). A shuffled
+    // castle brings its own, cut to the list's space: a castle more than 38 squares tall (with the map 64
+    // wide) loses its top rows. The rest are revealed here as the game does it: the square's revealed bit
+    // in g_CastleMap (the inverted castle's half there) and the square drawn on the map page.
+    const uint CastleMapAddr = 0x8006BB74, DrawMapSquare = 0x800F1B08;
+    const uint InvertedCastleMap = 0x400;
+
+    [PostHook("dra", "func_800F2288")]
+    static void RevealWholeCastle(CpuContext c, IMemory m)
+    {
+        if (!Active(m)) return;
+        uint half = (m.ReadU32(StageIdAddr) & 0x20) != 0 ? InvertedCastleMap : 0;
+        foreach (var (x, y) in SeedCastle.RevealCells)
+        {
+            uint addr = CastleMapAddr + half + (uint)((x >> 2) + y * 16);
+            byte revealed = (byte)(3 << ((3 - (x & 3)) * 2) & 0xAA);
+            byte bits = m.ReadU8(addr);
+            if ((bits & revealed) != 0) continue;
+            m.WriteU8(addr, (byte)(bits | revealed));
+            GameApi.Call(c, m, DrawMapSquare, (uint)x, (uint)y, 1);
+        }
+    }
+
     // ---- DRA func_800F24F4: the special save rooms ----
     // Run when a save room is set up. It knows three save rooms by their map cell: the Black Marble Gallery one
     // (records the "final save point" time), the Reverse Caverns false save room (not a save room) and the

@@ -13,9 +13,10 @@ namespace SotnArchipelago;
 
 // The seed's locations on the castle map, drawn like the pause-screen map: rooms you've explored filled in
 // the seed's map colour (map_color), the rest dark, walls from the recomp's own map images (its Map overlay,
-// loaded with its own loader). Each location is a dot: reachable in logic now, not yet, or checked; where you
-// are blinks; hovering a dot names its locations. Positions come from the game's stage data (MapData.g.cs),
-// reachability from the seed's own logic (MapLogic), explored rooms from the game's map data.
+// loaded with its own loader), or for a shuffled castle the seed's own map picture (SeedCastle). Each
+// location is a dot: reachable in logic now, not yet, or checked; where you are blinks; hovering a dot names
+// its locations. Positions come from the game's stage data (MapData.g.cs, moved with their rooms in a
+// shuffled castle), reachability from the seed's own logic (MapLogic), explored rooms from the game's map data.
 public sealed class MapPanel : IPanel
 {
     public string Name => "Archipelago map";
@@ -47,7 +48,6 @@ public sealed class MapPanel : IPanel
 
     // Locations by (inverted castle, x, y) for this seed.
     Dictionary<(bool Inverted, int X, int Y), List<long>> _spots = [];
-    int _spotsFor = -1;
 
     public MapPanel()
     {
@@ -180,17 +180,41 @@ public sealed class MapPanel : IPanel
 
     void DrawMap(bool inverted, (bool Inverted, int X, int Y)? you)
     {
-        LoadTextures();
-        var avail = ImGui.GetContentRegionAvail();
-        float scale = MathF.Max(0.5f, MathF.Min(avail.X / ImageWidth, avail.Y / ImageHeight));
-        var origin = ImGui.GetCursorScreenPos();
-        var size = new Vector2(ImageWidth * scale, ImageHeight * scale);
-        var draw = ImGui.GetWindowDrawList();
-        var (fill, walls) = MapColours();
+        // A shuffled castle is drawn from the seed's own map picture (SeedCastle), in the game's geometry: a
+        // cell every 4 pixels, its 5x5 block sharing edges with its neighbours, the inverted castle turned round.
+        // Otherwise from the recomp's images of the vanilla castle, tinted with the seed's map colours.
+        bool seedMap = SeedCastle.Shuffled;
+        float imageWidth, imageHeight, cellPixels, blockPixels, topCut;
+        int shift;
+        uint texture, fill, walls;
+        if (seedMap)
+        {
+            imageWidth = imageHeight = SeedCastle.MapSize;
+            cellPixels = SeedCastle.CellPixels;
+            blockPixels = SeedCastle.BlockPixels;
+            topCut = 0;
+            shift = 0;
+            texture = SeedCastle.Texture(inverted);
+            (fill, walls) = (SeedCastle.FillColour, 0xFFFFFFFF);
+        }
+        else
+        {
+            LoadTextures();
+            (imageWidth, imageHeight, cellPixels, blockPixels, topCut) = (ImageWidth, ImageHeight, CellPixels, CellPixels, TopCut);
+            shift = inverted ? ReverseRowShift : 0;
+            texture = inverted ? _invertedTexture : _castleTexture;
+            (fill, walls) = MapColours();
+        }
 
-        float cell = CellPixels * scale;
-        int shift = inverted ? ReverseRowShift : 0;
-        Vector2 Corner(int x, int y) => origin + new Vector2(x * cell, (y - shift) * cell - TopCut * scale);
+        var avail = ImGui.GetContentRegionAvail();
+        float scale = MathF.Max(0.5f, MathF.Min(avail.X / imageWidth, avail.Y / imageHeight));
+        var origin = ImGui.GetCursorScreenPos();
+        var size = new Vector2(imageWidth * scale, imageHeight * scale);
+        var draw = ImGui.GetWindowDrawList();
+
+        float cell = cellPixels * scale;
+        var block = new Vector2(blockPixels * scale, blockPixels * scale);
+        Vector2 Corner(int x, int y) => origin + new Vector2(x * cell, (y - shift) * cell - topCut * scale);
 
         draw.AddRectFilled(origin, origin + size, Background);
         draw.PushClipRect(origin, origin + size, true);
@@ -199,19 +223,19 @@ public sealed class MapPanel : IPanel
         // or not drawn, as on the pause map.
         var explored = Explored(inverted);
         var exploredCells = explored.ToHashSet();
-        foreach (var (x, y) in explored) draw.AddRectFilled(Corner(x, y), Corner(x, y) + new Vector2(cell, cell), fill);
-        uint texture = inverted ? _invertedTexture : _castleTexture;
+        foreach (var (x, y) in explored) draw.AddRectFilled(Corner(x, y), Corner(x, y) + block, fill);
         if (texture != 0)
         {
             if (_showUnexplored) draw.AddImage((nint)texture, origin, origin + size, Vector2.Zero, Vector2.One, UnexploredWalls);
             foreach (var (x, y) in explored)
             {
-                var uv0 = new Vector2(x * CellPixels / ImageWidth, ((y - shift) * CellPixels - TopCut) / ImageHeight);
-                var uv1 = uv0 + new Vector2(CellPixels / ImageWidth, CellPixels / ImageHeight);
-                draw.AddImage((nint)texture, Corner(x, y), Corner(x, y) + new Vector2(cell, cell), uv0, uv1, walls);
+                var uv0 = new Vector2(x * cellPixels / imageWidth, ((y - shift) * cellPixels - topCut) / imageHeight);
+                var uv1 = uv0 + new Vector2(blockPixels / imageWidth, blockPixels / imageHeight);
+                draw.AddImage((nint)texture, Corner(x, y), Corner(x, y) + block, uv0, uv1, walls);
             }
         }
-        else draw.AddText(origin + new Vector2(8, 8), 0xFFFFFFFF, "(the recomp's castle map image couldn't be loaded)");
+        else draw.AddText(origin + new Vector2(8, 8), 0xFFFFFFFF,
+            seedMap ? "(the seed's castle map couldn't be drawn)" : "(the recomp's castle map image couldn't be loaded)");
 
         // Where you are: a blinking square, as on the pause map.
         if (you is { } me && me.Inverted == inverted)
@@ -219,8 +243,8 @@ public sealed class MapPanel : IPanel
             float pulse = 0.55f + 0.45f * MathF.Abs(MathF.Sin((float)ImGui.GetTime() * 4f));
             var corner = Corner(me.X, me.Y);
             var grow = new Vector2(MathF.Max(1f, cell * 0.15f), MathF.Max(1f, cell * 0.15f));
-            draw.AddRectFilled(corner - grow - Vector2.One, corner + new Vector2(cell, cell) + grow + Vector2.One, 0xFF000000);
-            draw.AddRectFilled(corner - grow, corner + new Vector2(cell, cell) + grow, ((uint)(pulse * 255) << 24) | 0x00FFFFFF);
+            draw.AddRectFilled(corner - grow - Vector2.One, corner + block + grow + Vector2.One, 0xFF000000);
+            draw.AddRectFilled(corner - grow, corner + block + grow, ((uint)(pulse * 255) << 24) | 0x00FFFFFF);
         }
 
         // Locations.
@@ -241,7 +265,7 @@ public sealed class MapPanel : IPanel
                 : !logic ? NoLogic
                 : open.Any(reachable.Contains) ? InLogic
                 : OutOfLogic;
-            var centre = Corner(x, y) + new Vector2(cell / 2, cell / 2);
+            var centre = Corner(x, y) + block / 2;
             draw.AddCircleFilled(centre, radius + 1.5f, DotOutline);
             draw.AddCircleFilled(centre, radius, colour);
             if (open.Count > 1 && radius >= 6)
@@ -297,15 +321,25 @@ public sealed class MapPanel : IPanel
         ImGui.EndTooltip();
     }
 
+    // Worked out again once the seed's castle is known (SeedCastle: its rooms may have moved).
+    (int Connection, bool Shuffled) _spotsFor = (-1, false);
+
     void RefreshSpots()
     {
-        if (_spotsFor == ApClient.ConnectionId) return;
-        _spotsFor = ApClient.ConnectionId;
+        var now = (ApClient.ConnectionId, SeedCastle.Shuffled);
+        if (_spotsFor == now) return;
+        _spotsFor = now;
         _spots = [];
-        foreach (var (id, (x, y, stage)) in MapData.Cells)
+        foreach (var (id, (vx, vy, stage)) in MapData.Cells)
         {
             if (!ApClient.IsMissing(id) && !ApClient.IsChecked(id)) continue; // not in this seed
-            var key = ((stage & InvertedStageBit) != 0, (int)x, (int)y);
+            int x = vx, y = vy;
+            if (now.Shuffled)
+            {
+                if (SeedCastle.Cell(stage, x, y) is not { } moved) continue;
+                (x, y) = moved;
+            }
+            var key = ((stage & InvertedStageBit) != 0, x, y);
             if (!_spots.TryGetValue(key, out var list)) _spots[key] = list = [];
             list.Add(id);
         }

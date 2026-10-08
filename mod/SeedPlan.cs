@@ -61,6 +61,10 @@ static class SeedPlan
     public static Dictionary<int, List<(int Offset, byte Value)>>? GraphicsBytes(string file) =>
         Ready && _graphics.TryGetValue(file, out var chunks) ? chunks : null;
 
+    // This seed's writes to a stage's overlay (DRA: -1).
+    public static IReadOnlyList<RamWrite> WritesFor(int stage) =>
+        _byStage.TryGetValue(stage, out var list) ? list : Array.Empty<RamWrite>();
+
     // RIC.BIN patch bytes by file offset.
     public static IReadOnlyDictionary<uint, byte> RichterOverlayBytes => _richter;
     public static bool FromPayload => _fromPayload;

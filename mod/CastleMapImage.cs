@@ -13,7 +13,7 @@ namespace SotnArchipelago;
 // and come out again for a save from another seed; when that happens mid-game the map page is redrawn.
 static class CastleMapImage
 {
-    const uint Base = 0x801E0000;
+    public const uint Base = 0x801E0000;
     const uint RedrawMap = 0x800F2120;   // clears the map page and redraws every explored square
     const int CheckEveryFrames = 30;
 
@@ -22,6 +22,8 @@ static class CastleMapImage
     static bool _applied;
 
     public static bool Active => _applied;
+    public static bool HasPicture => _bytes.Count > 0;
+    public static IReadOnlyList<(uint Addr, byte Value)> Bytes => _bytes;
 
     public static void Add(int offset, byte value) => _bytes.Add((Base + (uint)offset, value));
 

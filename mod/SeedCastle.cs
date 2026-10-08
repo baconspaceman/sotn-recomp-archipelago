@@ -66,6 +66,20 @@ static class SeedCastle
         return inverted ? _textureRotated : _texture;
     }
 
+    // The part of the picture with anything drawn on it, plus a cell's margin, in pixels: from (X0, Y0) up to
+    // (X1, Y1), exclusive. Turned round with the picture for the inverted castle.
+    static (int X0, int Y0, int X1, int Y1) _drawn = (0, 0, MapSize, MapSize);
+    const int BoundsMargin = CellPixels;
+
+    public static (int X0, int Y0, int X1, int Y1) Bounds(bool inverted)
+    {
+        Build();
+        var (x0, y0, x1, y1) = _drawn;
+        if (inverted) (x0, y0, x1, y1) = (MapSize + 1 - x1, MapSize + 1 - y1, MapSize + 1 - x0, MapSize + 1 - y0);
+        return (Math.Max(0, x0 - BoundsMargin), Math.Max(0, y0 - BoundsMargin),
+                Math.Min(MapSize, x1 + BoundsMargin), Math.Min(MapSize, y1 + BoundsMargin));
+    }
+
     static void Build()
     {
         if (!Shuffled || _builtFor == ApClient.ConnectionId) return;
@@ -134,15 +148,22 @@ static class SeedCastle
 
         _rgba = new byte[MapSize * MapSize * 4];
         _rgbaRotated = new byte[MapSize * MapSize * 4];
+        int minX = MapSize, minY = MapSize, maxX = -1, maxY = -1;
         for (int y = 0; y < MapSize; y++)
             for (int x = 0; x < MapSize; x++)
             {
                 byte b = map[y * MapRowBytes + x / 2];
                 uint colour = palette[(x & 1) == 0 ? b & 15 : b >> 4];
+                if (colour != 0)
+                {
+                    minX = Math.Min(minX, x); maxX = Math.Max(maxX, x);
+                    minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
+                }
                 Put(_rgba, x, y, colour);
                 // Turned round 256 - p rather than 255 - p, so a cell's block stays at (4x, 4y).
                 if (x > 0 && y > 0) Put(_rgbaRotated, MapSize - x, MapSize - y, colour);
             }
+        _drawn = maxX < 0 ? (0, 0, MapSize, MapSize) : (minX, minY, maxX + 1, maxY + 1);
     }
 
     static void Put(byte[] rgba, int x, int y, uint abgr)

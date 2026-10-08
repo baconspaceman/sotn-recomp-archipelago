@@ -183,38 +183,48 @@ public sealed class MapPanel : IPanel
         // A shuffled castle is drawn from the seed's own map picture (SeedCastle), in the game's geometry: a
         // cell every 4 pixels, its 5x5 block sharing edges with its neighbours, the inverted castle turned round.
         // Otherwise from the recomp's images of the vanilla castle, tinted with the seed's map colours.
+        // texSize: the texture's size in pixels; view: the part of it shown (the seed's picture has a wide
+        // empty border, cut off here); a cell's pixel in the texture is (x * cellPixels, (y - shift) * cellPixels
+        // - topCut).
         bool seedMap = SeedCastle.Shuffled;
-        float imageWidth, imageHeight, cellPixels, blockPixels, topCut;
+        float cellPixels, blockPixels, topCut;
         int shift;
+        Vector2 texSize, viewFrom, viewSize;
         uint texture, fill, walls;
         if (seedMap)
         {
-            imageWidth = imageHeight = SeedCastle.MapSize;
             cellPixels = SeedCastle.CellPixels;
             blockPixels = SeedCastle.BlockPixels;
             topCut = 0;
             shift = 0;
+            texSize = new Vector2(SeedCastle.MapSize, SeedCastle.MapSize);
+            var (x0, y0, x1, y1) = SeedCastle.Bounds(inverted);
+            viewFrom = new Vector2(x0, y0);
+            viewSize = new Vector2(x1 - x0, y1 - y0);
             texture = SeedCastle.Texture(inverted);
             (fill, walls) = (SeedCastle.FillColour, 0xFFFFFFFF);
         }
         else
         {
             LoadTextures();
-            (imageWidth, imageHeight, cellPixels, blockPixels, topCut) = (ImageWidth, ImageHeight, CellPixels, CellPixels, TopCut);
+            (cellPixels, blockPixels, topCut) = (CellPixels, CellPixels, TopCut);
             shift = inverted ? ReverseRowShift : 0;
+            texSize = viewSize = new Vector2(ImageWidth, ImageHeight);
+            viewFrom = Vector2.Zero;
             texture = inverted ? _invertedTexture : _castleTexture;
             (fill, walls) = MapColours();
         }
 
         var avail = ImGui.GetContentRegionAvail();
-        float scale = MathF.Max(0.5f, MathF.Min(avail.X / imageWidth, avail.Y / imageHeight));
+        float scale = MathF.Max(0.5f, MathF.Min(avail.X / viewSize.X, avail.Y / viewSize.Y));
         var origin = ImGui.GetCursorScreenPos();
-        var size = new Vector2(imageWidth * scale, imageHeight * scale);
+        var size = viewSize * scale;
         var draw = ImGui.GetWindowDrawList();
 
         float cell = cellPixels * scale;
         var block = new Vector2(blockPixels * scale, blockPixels * scale);
-        Vector2 Corner(int x, int y) => origin + new Vector2(x * cell, (y - shift) * cell - topCut * scale);
+        Vector2 Pixel(int x, int y) => new(x * cellPixels, (y - shift) * cellPixels - topCut);
+        Vector2 Corner(int x, int y) => origin + (Pixel(x, y) - viewFrom) * scale;
 
         draw.AddRectFilled(origin, origin + size, Background);
         draw.PushClipRect(origin, origin + size, true);
@@ -226,12 +236,12 @@ public sealed class MapPanel : IPanel
         foreach (var (x, y) in explored) draw.AddRectFilled(Corner(x, y), Corner(x, y) + block, fill);
         if (texture != 0)
         {
-            if (_showUnexplored) draw.AddImage((nint)texture, origin, origin + size, Vector2.Zero, Vector2.One, UnexploredWalls);
+            if (_showUnexplored)
+                draw.AddImage((nint)texture, origin, origin + size, viewFrom / texSize, (viewFrom + viewSize) / texSize, UnexploredWalls);
             foreach (var (x, y) in explored)
             {
-                var uv0 = new Vector2(x * cellPixels / imageWidth, ((y - shift) * cellPixels - topCut) / imageHeight);
-                var uv1 = uv0 + new Vector2(blockPixels / imageWidth, blockPixels / imageHeight);
-                draw.AddImage((nint)texture, Corner(x, y), Corner(x, y) + block, uv0, uv1, walls);
+                var uv0 = Pixel(x, y) / texSize;
+                draw.AddImage((nint)texture, Corner(x, y), Corner(x, y) + block, uv0, uv0 + new Vector2(blockPixels, blockPixels) / texSize, walls);
             }
         }
         else draw.AddText(origin + new Vector2(8, 8), 0xFFFFFFFF,

@@ -18,6 +18,9 @@ a default options file for "Symphony of the Night (Recomp)".
 Items and relics are shuffled into the multiworld. Options add boss drops, enemy drops (enemysanity), shop and
 candle randomization, a random starting castle, cosmetic changes and more.
 
+The castle itself can be shuffled too: the rooms inside each area, which areas connect to each other, or both
+(ported from Sestren's SOTN Shuffler). The logic follows the new layout, and the map shows it.
+
 ## What is the goal?
 
 Defeat Dracula in the Reverse Center Cube. Reaching him takes the five relics of Vlad and the reverse castle.

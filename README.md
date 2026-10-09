@@ -73,6 +73,7 @@ things along the way:
 - AP items are shown as colored badges
 - A built-in map, item tracker and text client
 - Offline play, with saves tied to their seed
+- An optional shuffled castle: rooms and area connections, ported from Sestren's SOTN Shuffler
 - Reworded option names and some fixes (see the [changelog](CHANGELOG.md))
 
 ## What the mod changes
@@ -98,6 +99,7 @@ scripts and offline tests. See [TESTING.md](TESTING.md) and [how it works](docs/
 ## Credits
 
 - fdelduque for the original SotN apworld, and Darvitz for the item and location groups
+- Sestren for SOTN Shuffler and BIN-Patcher, which the shuffled castle is ported from
 - BlackLabelHQ for SymphonyRecomp, and MottZilla and eldri7ch for its randomizer support
 - Wild Mouse (sotn.io), MottZilla, eldri7ch, TalicZealot, Forat Negre, CRAZY4BLADES and the sotn-decomp
   contributors for the randomizer research all of this builds on
@@ -108,5 +110,7 @@ Made by Arcadia64 with help from Claude.
 
 ## License
 
-MIT (the apworld keeps Archipelago's MIT license). No game data is included; you need your own copy of the game.
+MIT (the apworld keeps Archipelago's MIT license). The castle shuffler in `apworld/sotn_recomp/castle/` is ported
+from Sestren's SOTN Shuffler and BIN-Patcher, also MIT; see its [LICENSE](apworld/sotn_recomp/castle/LICENSE). No
+game data is included; you need your own copy of the game.
 Not affiliated with Konami, BlackLabelHQ or Archipelago.

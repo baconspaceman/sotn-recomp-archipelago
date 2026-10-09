@@ -700,6 +700,8 @@ def write_tokens(world: "SotnWorld", patch: SotnPatchData):
     dopp10_item = 0xffff
 
     for loc in world.multiworld.get_locations(world.player):
+        if loc.address is None:
+            continue  # an event: Victory, or a switch of the shuffled castle's logic (CastleRegions.py)
         # Save Jewel of open item
         if loc.name == "Long Library - Librarian Shop Item":
             item_data = items["Secret boots"]

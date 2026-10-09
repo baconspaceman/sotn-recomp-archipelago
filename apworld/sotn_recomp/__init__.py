@@ -8,6 +8,7 @@ from Options import AssembleOptions
 from .Items import SotnItem, items, relic_table, item_id_to_name, JUNK_ITEMS, swap_in_powerful
 from .Locations import locations, SotnLocation
 from .Regions import create_regions, create_regions_no_logic
+from .CastleRegions import create_castle_regions, castle_logic_problem
 from .Rules import set_rules, set_no_logic_rules
 from .Options import SOTNOptions, sotn_option_groups
 from .Rom import SotnPatchData, write_tokens, start_passage
@@ -132,7 +133,7 @@ class SotnWorld(World):
             top, left = layout.positions["castleEntrance"]["dropUnderPortcullis"]  # 1x2 squares
             if x + 1 > 63 or (left in (x, x + 1) and top <= y <= top + 1):
                 return "no room for the passage to the starting area"
-        return None
+        return castle_logic_problem(self)
 
     def create_item(self, name: str) -> Item:
         data = items[name]
@@ -245,6 +246,8 @@ class SotnWorld(World):
     def create_regions(self) -> None:
         if self.options.no_logic.value:
             create_regions_no_logic(self.multiworld, self.player, self.options)
+        elif self.castle_layout is not None:
+            create_castle_regions(self)
         else:
             create_regions(self.multiworld, self.player, self.options)
 

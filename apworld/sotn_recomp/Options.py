@@ -85,7 +85,7 @@ class ColosseumBackDoor(Toggle):
 class OpenShortcuts(Toggle):
     """The castle's shortcuts are open from the start: from the Castle Entrance to the Underground Caverns, to the
     Marble Gallery and to its warp room, from Olrox's Quarters and from the Colosseum to the Royal Chapel, and the
-    one in the inverted castle's Entrance. The logic doesn't count on them."""
+    one in the inverted castle's Entrance. The logic counts on them only in a shuffled castle."""
     display_name = "Open shortcuts"
 
 

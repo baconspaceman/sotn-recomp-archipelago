@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+Test build of the shuffled castle.
+
+- New options to shuffle the castle, ported from Sestren's SOTN Shuffler: `shuffle_rooms` lays out each area's rooms differently, `shuffle_area_connections` changes which areas lead to which. The logic, the pause map and the Map window follow the new layout.
+- `map_area_colors`: with a shuffled castle, the pause map shows each area in its own colour
+- With a shuffled castle, the Castle map from the Librarian shows the whole castle
+- `starting_area`: sotn.io's fixes for Royal Chapel and Castle Keep starts
+
 ## 0.3.3
 
 - Docked windows now actually come back docked after restarting the game (in 0.3.2 they came back floating together)
